@@ -13,22 +13,22 @@
 static int samples = 0;
 
 // Calculate the magnitude for the result of half-complex format DFT
-int fft_CalHalfComplexMagnitude(FFT_t* data, int samples){
+int fft_CalHalfComplexMagnitude(FFT_t* data){
 	int i = 0;
 	double real_sqr, img_sqr;
 	//bzero(samples * sizeof(data->time_domain_data[0]));
-	bzero(data->time_domain_data,samples * sizeof(double));
+	bzero(data->time_domain_data,data->samples * sizeof(double));
 	data->freq_domain_magnitude = data->time_domain_data;
 
-	for(i = 0; i<((samples/2)+1); i++){
+	for(i = 0; i<(((data->samples)/2)+1); i++){
 
 		real_sqr = pow(data->freq_domain_data[i],2.0); 
 
-		if((i==0)||(i==(samples/2))){
+		if((i==0)||(i==((data->samples)/2))){
 			img_sqr = 0; 
 		}
 		else{
-			img_sqr = pow(data->freq_domain_data[samples-i],2.0);
+			img_sqr = pow(data->freq_domain_data[(data->samples)-i],2.0);
 		}
 		data->freq_domain_magnitude[i] = sqrt(real_sqr+img_sqr);
 
@@ -37,22 +37,22 @@ int fft_CalHalfComplexMagnitude(FFT_t* data, int samples){
 	return 0;
 } 
 
-int fft_Transform(FFT_t* data, int samples){
+int fft_Transform(FFT_t* data){
 
 	int i = 0;
 	// first, clear ther buffers
 	fftw_execute(data->tr_plan);
 
-	for(i = 0; i<samples; i++)
-		data->freq_domain_data[i] = (data->freq_domain_data[i]/(samples)); // Normalised by the number of samples
+	for(i = 0; i<(data->samples); i++)
+		data->freq_domain_data[i] = (data->freq_domain_data[i]/(data->samples)); // Normalised by the number of samples
 
 	return 0;
 }
 
-int fft_Setup(FFT_t* data, int samples){
+int fft_Setup(FFT_t* data){
 
-	data->time_domain_data = fftw_malloc(sizeof(double)*samples);	
-	data->freq_domain_data = fftw_malloc(sizeof(double)*samples);
+	data->time_domain_data = fftw_malloc(sizeof(double)*(data->samples));	
+	data->freq_domain_data = fftw_malloc(sizeof(double)*(data->samples));
 
 	// Allocate memory for transform
 	if((data->freq_domain_data == NULL)||(data->time_domain_data == NULL)){
@@ -62,7 +62,7 @@ int fft_Setup(FFT_t* data, int samples){
 	// Set Plan
 	//printf("%s - %08X , %08X\n",__FUNCTION__,&data->time_domain_data,&data->freq_domain_data);
 
-	data->tr_plan = fftw_plan_r2r_1d(samples, data->time_domain_data, data->freq_domain_data, /*FFTW_DHT*/ FFTW_R2HC, FFTW_ESTIMATE);
+	data->tr_plan = fftw_plan_r2r_1d(data->samples, data->time_domain_data, data->freq_domain_data, /*FFTW_DHT*/ FFTW_R2HC, FFTW_ESTIMATE);
 	if(data->tr_plan < 0){
 		perror("Failed to set plan");
 		exit(1);
