@@ -5,8 +5,10 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <zlib.h>
 
 #include "vibration_analyzer.h"
+#include "socket_client.h"
 
 #define TOTAL_SENSOR_NUM    2
 VIB_ANALYZER_t* analyzer = NULL;
@@ -27,27 +29,19 @@ void* analyzer_SubThread(void* arg){
 	thread_id = pthread_self();
 
 	while(1){
+
 		vibSensor_ReadData(dev);
 
 		for(j=CORD_X; j<CORD_MAX; j++){
 			fft_Transform(&fft_data[j]);
-			fft_CalHalfComplexMagnitude(&fft_data[j]);
+			//fft_CalHalfComplexMagnitude(&fft_data[j]);
 		}
 
-		//printf("Magnidute\n");
-		for(i=0; i<(samples/2)+1; ++i){
-			if((fft_data[CORD_X].freq_domain_magnitude[i] > 0.01)
-				||(fft_data[CORD_Y].freq_domain_magnitude[i] > 0.01)
-				||(fft_data[CORD_Z].freq_domain_magnitude[i] > 0.01)){
-					printf("[%d] %d : %1.7f %1.7f %1.7f \n", 
-							thread_id,
-							i,
-							fft_data[CORD_X].freq_domain_magnitude[i],
-							fft_data[CORD_Y].freq_domain_magnitude[i],
-							fft_data[CORD_Z].freq_domain_magnitude[i]);
-				}
-		}		
-
+		//sclient_MutexLock();
+		sclient_SendData(az);
+		//usleep(10000);
+		//sclient_SendData(az, FREQ_DOMAIN_VALUE);
+		//sclient_MutexUnlock();
 	}
 
 	for(j=CORD_X; j<CORD_MAX; j++){
@@ -81,7 +75,8 @@ int main(void){
 	analyzer[1].dev.sample_rate = 1600;
 	analyzer[1].dev.sample_time = 1;
 
-	
+	sclient_Init();
+
 	vibSensor_PiGpioInit();
 
 	for(i=0; i<TOTAL_SENSOR_NUM; i++ ){
@@ -104,41 +99,6 @@ int main(void){
 		
 	}
 
-#if 0
-	// This is for test
-	dev = &analyzer[0].dev;
-	fft_data = analyzer[0].tr_data;
-	
-	while(1){
-		vibSensor_ReadData(dev);
-
-		for(j=CORD_X; j<CORD_MAX; j++){
-			fft_Transform(&fft_data[j]);
-			fft_CalHalfComplexMagnitude(&fft_data[j]);
-		}
-
-		//printf("Magnidute\n");
-		for(i=0; i<(samples/2)+1; ++i){
-			if((fft_data[CORD_X].freq_domain_magnitude[i] > 0.01)
-				||(fft_data[CORD_Y].freq_domain_magnitude[i] > 0.01)
-				||(fft_data[CORD_Z].freq_domain_magnitude[i] > 0.01)){
-					printf("%d : %1.7f %1.7f %1.7f \n", 
-							i,
-							fft_data[CORD_X].freq_domain_magnitude[i],
-							fft_data[CORD_Y].freq_domain_magnitude[i],
-							fft_data[CORD_Z].freq_domain_magnitude[i]);
-				}
-		}		
-
-	}
-
-	for(j=CORD_X; j<CORD_MAX; j++){
-		fft_Destroy(&fft_data[j]);
-	}
-
-	vibSensor_SpiCleanUp(dev);
-#else
-
 	pthread_create(&thread[0],NULL,analyzer_SubThread,(void*)&analyzer[0]);
 	pthread_create(&thread[1],NULL,analyzer_SubThread,(void*)&analyzer[1]);
 
@@ -146,9 +106,9 @@ int main(void){
 	pthread_join(thread[1], NULL);
 
 	//analyzer_SubThread(&analyzer[0]);
-#endif
 
 	vibSensor_PiGpioCleanUp();
+	sclient_CleanUp();
 
     return 0;
 }
