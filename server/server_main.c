@@ -8,10 +8,9 @@
 #include <arpa/inet.h>
 
 #include "data_handler.h"
-
+#include "db_inf.h"
 
 #define UDP_PORT 5100
-//#define NET_ADDR "192.168.1.12"
 
 
 int sockfd = 0;
@@ -19,7 +18,7 @@ socklen_t data_len;
 struct sockaddr_in servaddr, cliaddr;
 
 
-static const int samples = 1600;
+static const int samples = SAMPLES;
 
 
 int server_Init(void){
@@ -87,9 +86,13 @@ int main(void){
     
 
     server_Init();
+    dbinf_Init();
     dhandler_Init();
+
     server_RecvData();
+    
     dhandler_CleanUp();
+    dbinf_CleanUp();
     server_CleanUp();
 
     return 0;

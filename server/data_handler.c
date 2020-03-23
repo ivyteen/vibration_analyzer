@@ -7,7 +7,7 @@
 #include <zlib.h>
 #include "data_handler.h"
 //#include "fft.h"
-//#include "db_inf.h"
+#include "db_inf.h"
 
 
 #define TOTAL_INF_CLIENT    1
@@ -17,7 +17,7 @@
 static SENSOR_t* sensor = NULL;
 static Bytef* data_start = NULL;
 
-
+#if 0
 static int dhandler_InsertQueue(void){
 
 
@@ -30,14 +30,46 @@ static void* dhandler_ThreadLoop(void* arg){
 
     return NULL;
 }
+#endif
+
+static int dhandler_CalAbsAvg(SENSOR_t *data){
+
+    double *cord_vals;
+    double tmp[SAMPLES]={0.0,};
+    double sum;
+    double avg;
+
+    CORD_t i = 0;
+    int j = 0;
+
+    for(i=CORD_X; i<CORD_MAX; i++){
+        cord_vals = data->time_domain[i];
+        sum = 0;
+        avg = 0;
+
+        for(j=0; j<SAMPLES; j++){
+            //if(data->time_domain[i])
+            tmp[j] = fabs(cord_vals[j]);
+        }
+        for(j=0; j<SAMPLES; j++){
+            sum += tmp[j];
+        }
+        avg = sum / SAMPLES;
+        data->abs_avg[i] = avg;
+    }
+
+
+    return 0;
+}
 
 static int dhandler_CalHalfComplexMagnitude(SENSOR_t *data){
     CORD_t i;
     int j = 0;
     double real_sqr, img_sqr;
 
-    int max_idx = (SAMPLES/2)+1;
-    //bzero(data->freq_magnitude)
+    //int max_idx = (SAMPLES/2)+1;
+    int max_idx = (SAMPLES/2);
+
     for(i = CORD_X; i<CORD_MAX; i++){
         for(j = 0; j<max_idx; j++){
 
@@ -95,7 +127,7 @@ int dhandler_DataExtractor(uint8_t* packet_buf){
     bzero(sensor,sizeof(SENSOR_t));
 
     memcpy(&sensor_num,(packet_buf+1),sizeof(uint16_t));
-    sensor_num = ntohs(sensor_num);
+    sensor->sensor_num = ntohs(sensor_num);
   
     data_ptr = data_start;
     //Convert string to double for time domain
@@ -121,16 +153,36 @@ int dhandler_DataExtractor(uint8_t* packet_buf){
     }
 
     dhandler_CalHalfComplexMagnitude(sensor);
+    dhandler_CalAbsAvg(sensor);
 
-    printf("[FM]:%d %.6f %.6f %.6f\n",sensor_num,
+    
+#if 0
+    printf("[FM]:%d %.6f %.6f %.6f\n",sensor->sensor_num,
         sensor->freq_magnitude[CORD_X][0],
         sensor->freq_magnitude[CORD_Y][0],
         sensor->freq_magnitude[CORD_Z][0]);
-        
+    printf("[Avg]:%d %.6f %.6f %.6f\n",sensor->sensor_num,
+        sensor->abs_avg[CORD_X],
+        sensor->abs_avg[CORD_Y],
+        sensor->abs_avg[CORD_Z]);
+#else
+/*
+    for(j=0; j<SAMPLES/2; j++){
+        if(sensor->freq_magnitude[CORD_X][j] > 0.1
+        || sensor->freq_magnitude[CORD_Y][j] > 0.1)
+            printf("[%s] x: %.6f, y: %.6f, z: %.6f \n",
+                    __FUNCTION__,
+                    sensor->freq_magnitude[CORD_X][j],
+                    sensor->freq_magnitude[CORD_Y][j],
+                    sensor->freq_magnitude[CORD_Z][j]
+            );
+    }
+*/
+#endif
 
-    //return dbinf_InsertData(&db_data);
+    return dbinf_InsertData(sensor);
 
-    return 0;
+    //return 0;
 }
 
 

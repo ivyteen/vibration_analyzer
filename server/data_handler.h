@@ -20,11 +20,12 @@ typedef struct packet_header {
 #define SAMPLES     1600    // Should be got from the client
 
 typedef struct sensor_t {
-
-    //FFT_t tr_data[CORD_MAX];
+    uint16_t sensor_num;
     double time_domain[CORD_MAX][SAMPLES];
     double freq_domain[CORD_MAX][SAMPLES];
-    double freq_magnitude[CORD_MAX][(SAMPLES/2)+1]; 
+    //double freq_magnitude[CORD_MAX][(SAMPLES/2)+1];
+    double freq_magnitude[CORD_MAX][SAMPLES/2]; 
+    double abs_avg[CORD_MAX];
 } SENSOR_t;
 
 #define STR_BUF_LEN 10
