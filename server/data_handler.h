@@ -18,6 +18,7 @@ typedef struct packet_header {
 
 
 #define SAMPLES     1600    // Should be got from the client
+#define HZ			60
 
 typedef struct sensor_t {
     uint16_t sensor_num;
@@ -26,6 +27,7 @@ typedef struct sensor_t {
     //double freq_magnitude[CORD_MAX][(SAMPLES/2)+1];
     double freq_magnitude[CORD_MAX][SAMPLES/2]; 
     double abs_avg[CORD_MAX];
+    double vrms[CORD_MAX];
 } SENSOR_t;
 
 #define STR_BUF_LEN 10

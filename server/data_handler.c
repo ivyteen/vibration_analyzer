@@ -38,6 +38,7 @@ static int dhandler_CalAbsAvg(SENSOR_t *data){
     double tmp[SAMPLES]={0.0,};
     double sum;
     double avg;
+	double vrms; // rms value of a wave unit
 
     CORD_t i = 0;
     int j = 0;
@@ -46,14 +47,26 @@ static int dhandler_CalAbsAvg(SENSOR_t *data){
         cord_vals = data->time_domain[i];
         sum = 0;
         avg = 0;
-
+#if 0
         for(j=0; j<SAMPLES; j++){
             //if(data->time_domain[i])
             tmp[j] = fabs(cord_vals[j]);
         }
+
         for(j=0; j<SAMPLES; j++){
             sum += tmp[j];
         }
+#else
+		vrms = 0;
+
+        for(j=0; j<SAMPLES; j++){
+            sum += fabs(cord_vals[j]);
+        }
+
+		vrms = (9.8*sum) / HZ;
+        data->vrms[i] = vrms;
+#endif
+
         avg = sum / SAMPLES;
         data->abs_avg[i] = avg;
     }

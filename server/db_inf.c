@@ -113,12 +113,13 @@ int dbinf_CleanUp(void){
 						time TIMESTAMP NULL DEFAULT current_timestamp,\
 					 	freq_data json NOT NULL,\
 						spectrum json NOT NULL,\
-						abs_avg json NOT NULL\
+						abs_avg json NOT NULL,\
+						vrms json NOT NULL\
 						)"
 
 #define INSERT_DATA_STR "INSERT INTO sensor%d\
-						(freq_data, spectrum, abs_avg)\
-						VALUES('%s','%s','%s')"
+						(freq_data, spectrum, abs_avg, vrms)\
+						VALUES('%s','%s','%s','%s')"
 
  
 MYSQL *sql_ins;
@@ -130,6 +131,7 @@ json_object *freq_magnitude_arr[CORD_MAX];
 json_object *freq_magnitude_cord_val;
 
 json_object *abs_avg;
+json_object *vrms;
 //json_object *cord_values[2];
 
 static int dbinf_CreateTable(int sensor_num){
@@ -198,6 +200,7 @@ static int dbinf_JsoncInit(void){
 	time_domain_cord_val = json_object_new_object();
 	freq_magnitude_cord_val = json_object_new_object();
 	abs_avg = json_object_new_object();
+	vrms = json_object_new_object();
 
 	return 0;
 }
@@ -214,6 +217,7 @@ static int dbinf_JsoncCleanUp(void){
 	json_object_put(freq_magnitude_cord_val);
 	json_object_put(time_domain_cord_val);
 	json_object_put(abs_avg);
+	json_object_put(vrms);
 
 
 	return 0;
@@ -319,7 +323,11 @@ static int dbinf_BuildJsonCord(SENSOR_t* sensor_data){
 	for(i=CORD_X; i<CORD_MAX; i++){
 		bzero(str,sizeof(str));
 		sprintf(str,"%.6f",sensor_data->abs_avg[i]);
-		json_object_object_add(abs_avg,cord[i],json_object_new_double_s(d,str));
+		json_object_object_add(abs_avg,cord[i],json_object_new_double_s(d,str));		
+		bzero(str,sizeof(str));
+		sprintf(str,"%.6f",sensor_data->vrms[i]);
+		json_object_object_add(vrms,cord[i],json_object_new_double_s(d,str));
+
 	}
 
 #endif
@@ -334,6 +342,7 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	char* time_domain_str = NULL;
 	char* freq_magnitude_str = NULL;
 	char* abs_avg_str = NULL;
+	char* vrms_str = NULL;
 	int sensor_num = sensor_data->sensor_num;
 	size_t query_len;
 	if(dbinf_CheckTableExist(sensor_num) == 0)
@@ -346,11 +355,12 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	time_domain_str = (char*)json_object_to_json_string(time_domain_cord_val);
 	freq_magnitude_str = (char*)json_object_to_json_string(freq_magnitude_cord_val);
 	abs_avg_str = (char*)json_object_to_json_string(abs_avg);
+	vrms_str = (char*)json_object_to_json_string(vrms);
 
-	query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str);
+	query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str)+strlen(vrms_str);
 	query_str = (char*)malloc(query_len);
 	bzero(query_str, query_len);
-	sprintf(query_str, INSERT_DATA_STR,sensor_num,time_domain_str,freq_magnitude_str,abs_avg_str);
+	sprintf(query_str, INSERT_DATA_STR,sensor_num,time_domain_str,freq_magnitude_str,abs_avg_str,vrms_str);
  	//printf("%s\n\n",query_str);
 	if(mysql_query(sql_ins,query_str) != 0){
 		fprintf(stderr,"insert data error - %s\n",mysql_error(sql_ins));
