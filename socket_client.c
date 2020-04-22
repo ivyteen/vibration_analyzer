@@ -14,8 +14,8 @@
 #include "socket_client.h"
 
 #define UDP_PORT 5100
-#define NET_ADDR "192.168.1.201"
-//#define NET_ADDR "192.168.1.12"
+//#define NET_ADDR "192.168.1.201"
+#define NET_ADDR "192.168.1.12"
 #define STR_BUF_LEN 10
 
 

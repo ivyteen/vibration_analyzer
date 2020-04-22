@@ -14,6 +14,13 @@
 
 #include "db_inf.h"
 
+#include <sys/types.h> 
+#include <sys/stat.h> 
+#include <sys/socket.h> 
+#include <unistd.h> 
+#include <sys/un.h> 
+
+
 #ifdef MONGODB
 #define DB_NAME "sensor_data"
 
@@ -133,6 +140,50 @@ json_object *freq_magnitude_cord_val;
 json_object *abs_avg;
 json_object *vrms;
 //json_object *cord_values[2];
+
+
+#define SOCK_PATH "/tmp/vib_monitor"
+#define TOTAL_SENSOR_NUM	2
+static int client_sockfd;
+
+time_t sensorDataTimeTable[TOTAL_SENSOR_NUM];
+
+
+static int dbinf_InitClientIPC(void){
+    
+	struct sockaddr_un clientaddr;
+    int client_len;
+
+	client_sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (client_sockfd == -1)
+    {
+        perror("error : ");
+        exit(1);
+    }
+
+    bzero(&clientaddr, sizeof(clientaddr));
+    clientaddr.sun_family = AF_UNIX;
+    strcpy(clientaddr.sun_path, SOCK_PATH);
+    client_len = sizeof(clientaddr);
+    if (connect(client_sockfd, (struct sockaddr *)&clientaddr, client_len) < 0)
+    {
+        perror("Connect error: ");
+        exit(1);
+    }
+
+
+	return 0;
+}
+
+static int dbinf_CleanUpClientIPC(void){
+	close(client_sockfd);
+	return 0;
+}
+
+static int dbinf_SendDataIPC(void){
+
+
+}
 
 static int dbinf_CreateTable(int sensor_num){
 
@@ -345,8 +396,9 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	char* vrms_str = NULL;
 	int sensor_num = sensor_data->sensor_num;
 	size_t query_len;
-	if(dbinf_CheckTableExist(sensor_num) == 0)
-        dbinf_CreateTable(sensor_num);
+
+	static unsigned char insert_db_flag = 0;
+
 
 	dbinf_JsoncInit();
 	dbinf_BuildJsonCord(sensor_data);
@@ -356,6 +408,11 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	freq_magnitude_str = (char*)json_object_to_json_string(freq_magnitude_cord_val);
 	abs_avg_str = (char*)json_object_to_json_string(abs_avg);
 	vrms_str = (char*)json_object_to_json_string(vrms);
+
+
+
+	if(dbinf_CheckTableExist(sensor_num) == 0)
+        dbinf_CreateTable(sensor_num);
 
 	query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str)+strlen(vrms_str);
 	query_str = (char*)malloc(query_len);
@@ -368,9 +425,11 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 		return -1;
 	}
 
+	free(query_str);
+
+
 	dbinf_JsoncCleanUp();
 
-	free(query_str);
 
 	return 0;
 }
@@ -381,7 +440,7 @@ int dbinf_Init(void){
 
 	dbinf_MysqlInit();
 	//dbinf_JsoncInit();
-
+	dbinf_InitClientIPC();
 
 	return 0;
 }
