@@ -4,13 +4,11 @@
 #include <stdint.h>
 #include <time.h>
 
-#ifdef MONGODB
-#include <bson.h>
-#include <mongoc.h>
-#else
+
 #include <json-c/json.h>
 #include <mysql/mysql.h>
-#endif
+
+#include "hiredis/hiredis.h"
 
 #include "db_inf.h"
 
@@ -19,100 +17,6 @@
 #include <sys/socket.h> 
 #include <unistd.h> 
 #include <sys/un.h> 
-
-
-#ifdef MONGODB
-#define DB_NAME "sensor_data"
-
-static mongoc_client_t *client;
-
-int dbinf_InsertData(DB_SET_t *data){
-
-    mongoc_collection_t *collection;
-    bson_oid_t oid;
-    bson_t *doc;
-    bson_t child;
-    bson_t child2;
-    bson_error_t error;
-    bool ret;
-
-    time_t rawtime;
-    struct tm *timeinfo;
-
-    int i = 0;
-    char sensor_num[32];
-
-    bzero(sensor_num,sizeof(sensor_num));
-    //printf("sensor_%d\n", data->sensor_num);
-    sprintf(sensor_num,"sensor_%d", data->sensor_num);
-    collection = mongoc_client_get_collection(client, DB_NAME,sensor_num);
-
-    doc = bson_new();
-
-    bson_oid_init(&oid,NULL);
-
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
-
-    printf("%d %d %d\n",timeinfo->tm_year+1900,timeinfo->tm_mon+1,timeinfo->tm_mday);
-
-    BSON_APPEND_OID(doc, "_id", &oid);
-    BSON_APPEND_INT32(doc,"year",(int32_t)(timeinfo->tm_year+1900));
-    BSON_APPEND_INT32(doc,"month",(int32_t)timeinfo->tm_mon+1);
-    BSON_APPEND_INT32(doc,"day",(int32_t)(timeinfo->tm_mday));
-    BSON_APPEND_INT32(doc,"hour",(int32_t)(timeinfo->tm_hour));
-    BSON_APPEND_INT32(doc,"min",(int32_t)(timeinfo->tm_min));
-    BSON_APPEND_INT32(doc,"sec",(int32_t)(timeinfo->tm_sec));
-
-    /* Insert array for x, y, z - time domain & magnitude */
-    BSON_APPEND_ARRAY_BEGIN(doc,"time_domain_data",&child);
-    for(i = 0; i < sizeof(); i++){
-
-        bson_append_document_begin()
-        BSON_APPEND_DOUBLE();
-        BSON_APPEND_DOUBLE();
-        BSON_APPEND_DOUBLE();
-        
-    }
-    bson_append_array_end(doc,&child);
-
-
-    BSON_APPEND_ARRAY_BEGIN(doc,"freq_magnitude_data",&child);
-    for(i = 0; i < sizeof(); i++){
-
-    }
-    bson_append_array_end(doc,&child);
-
-
-    if (!mongoc_collection_insert_one (
-           collection, doc, NULL, NULL, &error)) {
-        fprintf (stderr, "%s\n", error.message);
-        return -1;
-    }
-    bson_destroy(doc);
-    mongoc_collection_destroy(collection);
-
-
-    return 0;
-}
-
-
-int dbinf_Init(void){
-
-    mongoc_init();
-    client = mongoc_client_new("mongodb://localhost:27017/?appname=vibration-analyzer");
-
-    return 0;
-}
-
-int dbinf_CleanUp(void){
-
-    mongoc_client_destroy(client);
-    mongoc_cleanup();
-
-    return 0;
-}
-#else // MONGODB
 
 
 #define CHECK_TABLE_STR	"SHOW TABLES LIKE 'sensor%d'"
@@ -128,9 +32,18 @@ int dbinf_CleanUp(void){
 						(freq_data, spectrum, abs_avg, vrms)\
 						VALUES('%s','%s','%s','%s')"
 
- 
+/*
+#define IPC_FREQ_STR "{ \"sensor_num\": %d, \"freq_data\": %s }"
+#define IPC_SPECTRUM_STR "{ \"sensor_num\": %d, \"spectrum\": %s }"
+#define IPC_SENSOR_NUM_STR "{ \"sensor_num\": %d }"
+*/
+
+#define REDIS_STR		"{ \"timestamp\": %s, \"freq_data\": %s, \"spectrum\": %s }"
+//#define REDIS_STR		"{ \"freq_data\": %s, \"spectrum\": %s }"
+
+
+
 MYSQL *sql_ins;
-//json_object *sensor_data;
 json_object *time_domain_arr[CORD_MAX];
 json_object *time_domain_cord_val;
 
@@ -139,50 +52,60 @@ json_object *freq_magnitude_cord_val;
 
 json_object *abs_avg;
 json_object *vrms;
-//json_object *cord_values[2];
 
 
-#define SOCK_PATH "/tmp/vib_monitor"
+
+#define REDIS_PORT	6379
 #define TOTAL_SENSOR_NUM	2
-static int client_sockfd;
 
 time_t sensorDataTimeTable[TOTAL_SENSOR_NUM];
 
 
-static int dbinf_InitClientIPC(void){
-    
-	struct sockaddr_un clientaddr;
-    int client_len;
+static redisContext* cont = NULL;
+static redisReply* rep = NULL;
 
-	client_sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (client_sockfd == -1)
-    {
-        perror("error : ");
+static int dbinf_InitRedis(void){
+
+	//struct timeval timeout = { 1, 500000 };
+	cont = redisConnect("127.0.0.1", REDIS_PORT);
+
+	if (cont == NULL || cont->err) {
+        if (cont) {
+            printf("[%s] Connection error: %s\n", cont->errstr);
+            redisFree(cont);
+        } else {
+            printf("Connection error: can't allocate redis context\n");
+        }
         exit(1);
     }
-
-    bzero(&clientaddr, sizeof(clientaddr));
-    clientaddr.sun_family = AF_UNIX;
-    strcpy(clientaddr.sun_path, SOCK_PATH);
-    client_len = sizeof(clientaddr);
-    if (connect(client_sockfd, (struct sockaddr *)&clientaddr, client_len) < 0)
-    {
-        perror("Connect error: ");
-        exit(1);
-    }
-
 
 	return 0;
 }
 
-static int dbinf_CleanUpClientIPC(void){
-	close(client_sockfd);
+static int dbinf_CleanUpRedis(void){
+
+	if(rep != NULL)
+		freeReplyObject(rep);
+
+	if(cont != NULL)
+		redisFree(cont);
+
 	return 0;
 }
 
-static int dbinf_SendDataIPC(void){
+static int dbinf_UploadDataRedis(int sensor_num, char* data_str){
 
+	char num_str[4] = {0,};
+	sprintf(num_str,"%d",sensor_num);
 
+	rep = redisCommand(cont, "SET key:%s %s",num_str, data_str);
+	if((rep == NULL)||(cont->err)){
+		fprintf(stderr,"Redis Upload error: %s\n", cont->errstr);
+		exit(1);
+	}
+	freeReplyObject(rep);
+
+	return 0;
 }
 
 static int dbinf_CreateTable(int sensor_num){
@@ -242,7 +165,7 @@ static int dbinf_CheckTableExist(int sensor_num){
 
 static int dbinf_JsoncInit(void){
 	CORD_t i;
-	//sensor_data = json_object_new_object();
+
 	for(i=CORD_X; i<CORD_MAX; i++){
 		time_domain_arr[i] = json_object_new_array();
 		freq_magnitude_arr[i] = json_object_new_array();
@@ -313,60 +236,28 @@ static int dbinf_BuildJsonCord(SENSOR_t* sensor_data){
 	char* cord[CORD_MAX] = {"x","y","z"};
 	double d = 0.23412;
 
-#if 0	
-	/* Array for time domain */
-	for(i=0; i<SAMPLES; i++){
 
-		for(j=0; j<CORD_MAX; j++){
-			bzero(str,sizeof(str));
-			sprintf(str,"%.7f",sensor_data->time_domain[j][i]);
-			json_object_object_add(time_domain_cord_val,cord[j],json_object_new_double_s(d,str));		
-		}
-
-		json_object_array_add(time_domain_arr,time_domain_cord_val);
-	}
-
-//	json_object_object_add(sensor_data,"time_domain", time_domain_arr);
-	for(i=0; i<SAMPLES/2; i++){
-
-		for(j=0; j<CORD_MAX; j++){
-			bzero(str,sizeof(str));
-			sprintf(str,"%.7f",0.56789);
-			json_object_object_add(freq_magnitude_cord_val,cord[j],json_object_new_double_s(d,str));
-		}
-
-		json_object_array_add(freq_magnitude_arr,freq_magnitude_cord_val);
-	}
-#else
 	/* Array for time domain */
 	for(i=CORD_X; i<CORD_MAX; i++){
 
 		for(j=0; j<SAMPLES; j++){
-		//for(j=0; j<4; j++){
 			bzero(str,sizeof(str));
 			sprintf(str,"%.6f",sensor_data->time_domain[i][j]);
-			//json_object_object_add(time_domain_cord_val,cord[i],json_object_new_double_s(d,str));		
 			json_object_array_add(time_domain_arr[i],json_object_new_double_s(d,str));
 		}
 
-		//json_object_array_add(time_domain_arr,time_domain_cord_val);
 		json_object_object_add(time_domain_cord_val,cord[i],time_domain_arr[i]);
 	}
 
-//	json_object_object_add(sensor_data,"time_domain", time_domain_arr);
 	for(i=CORD_X; i<CORD_MAX; i++){
 
-		for(j=0; j<SAMPLES/2; j++){
-		//for(j=0; j<2; j++){
+		for(j=1; j<SAMPLES/2; j++){ /* No DC */
 
 			bzero(str,sizeof(str));
 			sprintf(str,"%.6f",sensor_data->freq_magnitude[i][j]);
-			//json_object_object_add(freq_magnitude_cord_val,cord[i],json_object_new_double_s(d,str));
 			json_object_array_add(freq_magnitude_arr[i],json_object_new_double_s(d,str));
 
 		}
-
-		//json_object_array_add(freq_magnitude_arr,freq_magnitude_cord_val);
 		json_object_object_add(freq_magnitude_cord_val,cord[i],freq_magnitude_arr[i]);
 
 	}
@@ -381,24 +272,41 @@ static int dbinf_BuildJsonCord(SENSOR_t* sensor_data){
 
 	}
 
-#endif
 
 	return 0;
 
 }
 
+static int dbinf_CheckInsertMySQL(int sensor_num, time_t current_time){
+	
+#define RENEW_INTERVAL 1800 //30min
+
+	
+	if(current_time - sensorDataTimeTable[sensor_num] > RENEW_INTERVAL){
+		sensorDataTimeTable[sensor_num] = current_time;
+		return 1;
+	}
+	
+
+	return 0;
+}
+
 int dbinf_InsertData(SENSOR_t *sensor_data){
 
-	char* query_str = NULL;
 	char* time_domain_str = NULL;
 	char* freq_magnitude_str = NULL;
 	char* abs_avg_str = NULL;
 	char* vrms_str = NULL;
 	int sensor_num = sensor_data->sensor_num;
-	size_t query_len;
 
-	static unsigned char insert_db_flag = 0;
+	char* redis_str = NULL;
+	size_t str_len;
 
+	time_t current_time;
+	struct tm* local_time;
+	char timestamp_str[26]={0,};
+
+	time(&current_time);
 
 	dbinf_JsoncInit();
 	dbinf_BuildJsonCord(sensor_data);
@@ -409,23 +317,56 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	abs_avg_str = (char*)json_object_to_json_string(abs_avg);
 	vrms_str = (char*)json_object_to_json_string(vrms);
 
+	//printf("[hmm] %s\n\n",time_domain_cord_val);
 
+	if(dbinf_CheckInsertMySQL(sensor_num, current_time)){
 
-	if(dbinf_CheckTableExist(sensor_num) == 0)
-        dbinf_CreateTable(sensor_num);
+		char* query_str = NULL;
+		size_t query_len;
 
-	query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str)+strlen(vrms_str);
-	query_str = (char*)malloc(query_len);
-	bzero(query_str, query_len);
-	sprintf(query_str, INSERT_DATA_STR,sensor_num,time_domain_str,freq_magnitude_str,abs_avg_str,vrms_str);
- 	//printf("%s\n\n",query_str);
-	if(mysql_query(sql_ins,query_str) != 0){
-		fprintf(stderr,"insert data error - %s\n",mysql_error(sql_ins));
+		if(dbinf_CheckTableExist(sensor_num) == 0)
+			dbinf_CreateTable(sensor_num);
+
+		query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str)+strlen(vrms_str);
+		query_str = (char*)malloc(query_len);
+		bzero(query_str, query_len);
+		sprintf(query_str, INSERT_DATA_STR,sensor_num,time_domain_str,freq_magnitude_str,abs_avg_str,vrms_str);
+		
+		//printf("%s\n\n",query_str);
+		if(mysql_query(sql_ins,query_str) != 0){
+			fprintf(stderr,"insert data error - %s\n",mysql_error(sql_ins));
+			free(query_str);
+			return -1;
+		}
+
 		free(query_str);
-		return -1;
-	}
 
-	free(query_str);
+	} 
+
+
+	local_time = localtime(&current_time);
+	sprintf(timestamp_str, "\"%d.%d.%d %02d:%02d:%02d\"",
+		local_time->tm_year+1900, 
+		local_time->tm_mon+1,
+		local_time->tm_mday,
+		local_time->tm_hour,
+		local_time->tm_min,
+		local_time->tm_sec
+	);
+
+	str_len = strlen(REDIS_STR)+strlen(timestamp_str)+strlen(time_domain_str)+strlen(freq_magnitude_str)+8;
+//	str_len = strlen(REDIS_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+8;
+
+	redis_str = (char*)malloc(str_len);
+	bzero(redis_str, str_len);
+	sprintf(redis_str, REDIS_STR,timestamp_str,time_domain_str,freq_magnitude_str);
+//	sprintf(redis_str, REDIS_STR,time_domain_str,freq_magnitude_str);
+
+	dbinf_UploadDataRedis(sensor_num, redis_str);
+
+	free(redis_str);
+
+
 
 
 	dbinf_JsoncCleanUp();
@@ -440,7 +381,8 @@ int dbinf_Init(void){
 
 	dbinf_MysqlInit();
 	//dbinf_JsoncInit();
-	dbinf_InitClientIPC();
+	//dbinf_InitClientIPC();
+	dbinf_InitRedis();
 
 	return 0;
 }
@@ -449,13 +391,12 @@ int dbinf_CleanUp(void){
 
 	dbinf_MysqlCleanUp();
 	//dbinf_JsoncCleanUp();
-
+	//dbinf_CleanUpClientIPC();
+	dbinf_CleanUpRedis();
 
 	return 0;
 }
 
-
-#endif
 //#define MAIN
 
 #ifdef MAIN
