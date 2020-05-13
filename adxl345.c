@@ -5,7 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
-
+#include <unistd.h>
 #include "adxl345.h"
 
 #define SENSOR_DATA
@@ -21,6 +21,8 @@ static const int coldStartSamples = 2;  // number of samples to be read before o
 static const double coldStartDelay = 0.1;  // time delay between cold start reads
 #endif
 
+
+#define CAL_OFFSET(val)  (((val) < 0)?((char)(((abs(val))*0.0039)/0.0156)):(-((char)(((abs(val))*0.0039)/0.0156))))
 
 static const int speedSPI = 2000000;  // SPI communication speed, bps
 static const int freqMaxSPI = 100000;  // maximal possible communication sampling rate through SPI, Hz (assumption)
@@ -82,10 +84,13 @@ int vibSensor_ReadData(SENSOR_DEV_t* dev){
             y = (data[4]<<8)|data[3];
             z = (data[6]<<8)|data[5];
             t = time_time();
+            //printf("%d %d %d\n",x,y,z);
             dev->rx[i] = x * accConversion;
             dev->ry[i] = y * accConversion;
             dev->rz[i] = z * accConversion;
             dev->rt[i] = t - tStart;
+
+            //printf("%02f %02f %02f\n",dev->rx[i],dev->ry[i],dev->rz[i]);
         }
         else {
             printf("Bytes read : %d\n", bytes);
@@ -112,7 +117,7 @@ int vibSensor_ReadData(SENSOR_DEV_t* dev){
     
 //    printf("Writing to the output file...\n");
 #ifdef SENSOR_DATA
-    printf("Sampling Sensor\n");
+    //printf("Sampling Sensor\n");
 #else
     printf("Sine Wave\n");
 #endif
@@ -165,14 +170,123 @@ int vibSensor_ReadData(SENSOR_DEV_t* dev){
     return 0;
 }
 
+static int vibSensor_SensorCalibration(SENSOR_DEV_t* dev){
+
+    int i;
+    char data[7];
+    int bytes;
+    int16_t x,y,z;
+    int16_t *x_arr, *y_arr, *z_arr;
+
+	int x_sum=0, y_sum=0, z_sum=0;
+	int x_avg=0, y_avg=0, z_avg=0;
+	/*
+    int x_dev, y_dev, z_dev;
+
+    x_arr = (int16_t*)malloc(sizeof(int16_t)*dev->samples_max_spi);
+    y_arr = (int16_t*)malloc(sizeof(int16_t)*dev->samples_max_spi);
+    z_arr = (int16_t*)malloc(sizeof(int16_t)*dev->samples_max_spi);
+*/
+
+
+    for (i = 0; i < dev->samples_max_spi; i++) {
+        data[0] = DATAX0;
+        bytes = vibSensor_ReadBytes(dev->handler, data, 7);
+        if (bytes == 7) {
+            x = (data[2]<<8)|data[1];
+            //x_arr[i] = x;
+            //x_sum += x_arr[i];
+            x_sum += x;
+
+            y = (data[4]<<8)|data[3];
+            //y_arr[i] = y;
+            //y_sum += y_arr[i];
+            y_sum += y;
+
+
+            z = (data[6]<<8)|data[5];
+            //z_arr[i] = z;
+            //z_sum += z_arr[i];
+            z_sum += z;
+
+
+            //printf("%02f %02f %02f\n",dev->rx[i],dev->ry[i],dev->rz[i]);
+        }
+        else {
+            printf("[%s] Bytes read : %d\n",__FUNCTION__,bytes);
+            gpioTerminate();
+            printf("[%s] Error occurred!\n",__FUNCTION__);
+            exit(1);
+        }
+
+    }
+
+    /* Get Avg */
+	x_avg = (int)(x_sum / dev->samples_max_spi);
+	y_avg = (int)(y_sum / dev->samples_max_spi);
+	z_avg = (int)(z_sum / dev->samples_max_spi);
+/*
+	for(i = 0; i<dev->samples_max_spi; i++){
+		x_sum += pow(x_avg-x_arr[i],2);
+		y_sum += pow(y_avg-y_arr[i],2);
+		z_sum += pow(z_avg-z_arr[i],2);
+	}
+
+	x_dev = (int)sqrt(x_sum/dev->samples_max_spi);
+	y_dev = (int)sqrt(y_sum/dev->samples_max_spi);
+	z_dev = (int)sqrt(z_sum/dev->samples_max_spi);
+*/
+
+    data[0] = OFS_X;
+    data[1] = CAL_OFFSET(x_avg);
+    printf("x offset : %d %X\n",x_avg,data[1]);
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+    data[0] = OFS_Y;
+    data[1] = CAL_OFFSET(y_avg);
+    printf("y offset : %d %X\n",y_avg,data[1]);
+
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+    data[0] = OFS_Z;
+    data[1] = CAL_OFFSET(z_avg);
+    printf("z offset : %d %X\n",z_avg,data[1]);
+
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+
+    //free(x_arr);
+    //free(y_arr);
+    //free(z_arr);
+
+    return 0;
+}
+
 
 int vibSensor_PiGpioInit(void){
 
-    if(gpioInitialise() < 0)
-    {
-        printf("Failed to initialize GPIO!");
+    int i=0;
+    int ret = 0;
+    for(i = 0; i<3; i++){
+        if((ret=gpioInitialise()) < 0)
+        {
+            gpioTerminate();
+            printf("GPIO Init retry");
+            usleep(100000);
+            //exit(EXIT_FAILURE);
+        }
+        else
+        {
+            break;
+        }
+        
+    }
+
+    if(ret < 0){
+        printf("Failed to init GPIO\n");
         exit(EXIT_FAILURE);
     }
+
 
     return 0;
 }
@@ -226,6 +340,22 @@ int vibSensor_SpiInit(SENSOR_DEV_t* dev)
     data[0] = POWER_CTL;
     data[1] = 0x08;
     vibSensor_WriteBytes(dev->handler, data, 2);
+
+    data[0] = OFS_X;
+    data[1] = 0;
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+    data[0] = OFS_Y;
+    data[1] = 0;
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+    data[0] = OFS_Z;
+    data[1] = 0;
+    vibSensor_WriteBytes(dev->handler, data, 2);
+
+
+    vibSensor_SensorCalibration(dev);
+
 
     dev->delay = 1.0 / vFreq;  // delay between reads in seconds
 

@@ -34,6 +34,10 @@ typedef struct sensor_dev_t {
 #define POWER_CTL     0x2D
 #define DATAX0        0x32
 
+#define OFS_X       0x1E
+#define OFS_Y       0x1F
+#define OFS_Z       0x20
+
 
 
 
