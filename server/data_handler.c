@@ -9,28 +9,14 @@
 //#include "fft.h"
 #include "db_inf.h"
 
-
+/*
 #define TOTAL_INF_CLIENT    1
 #define SENSORS_FOR_DEV     2
 #define TOTAL_SENSOR_NUM    (TOTAL_INF_CLIENT*SENSORS_FOR_DEV)
+*/
 
 static SENSOR_t* sensor = NULL;
 static Bytef* data_start = NULL;
-
-#if 0
-static int dhandler_InsertQueue(void){
-
-
-    return 0;
-}
-
-
-static void* dhandler_ThreadLoop(void* arg){
-
-
-    return NULL;
-}
-#endif
 
 static int dhandler_CalAbsAvg(SENSOR_t *data){
 
@@ -47,16 +33,7 @@ static int dhandler_CalAbsAvg(SENSOR_t *data){
         cord_vals = data->time_domain[i];
         sum = 0;
         avg = 0;
-#if 0
-        for(j=0; j<SAMPLES; j++){
-            //if(data->time_domain[i])
-            tmp[j] = fabs(cord_vals[j]);
-        }
 
-        for(j=0; j<SAMPLES; j++){
-            sum += tmp[j];
-        }
-#else
 		vrms = 0;
 
         for(j=0; j<SAMPLES; j++){
@@ -65,7 +42,7 @@ static int dhandler_CalAbsAvg(SENSOR_t *data){
 
 		vrms = (9.8*sum) / HZ;
         data->vrms[i] = vrms;
-#endif
+
 
         avg = sum / SAMPLES;
         data->abs_avg[i] = avg;
@@ -168,30 +145,6 @@ int dhandler_DataExtractor(uint8_t* packet_buf){
     dhandler_CalHalfComplexMagnitude(sensor);
     dhandler_CalAbsAvg(sensor);
 
-    
-#if 0
-    printf("[FM]:%d %.6f %.6f %.6f\n",sensor->sensor_num,
-        sensor->freq_magnitude[CORD_X][0],
-        sensor->freq_magnitude[CORD_Y][0],
-        sensor->freq_magnitude[CORD_Z][0]);
-    printf("[Avg]:%d %.6f %.6f %.6f\n",sensor->sensor_num,
-        sensor->abs_avg[CORD_X],
-        sensor->abs_avg[CORD_Y],
-        sensor->abs_avg[CORD_Z]);
-#else
-/*
-    for(j=0; j<SAMPLES/2; j++){
-        if(sensor->freq_magnitude[CORD_X][j] > 0.1
-        || sensor->freq_magnitude[CORD_Y][j] > 0.1)
-            printf("[%s] x: %.6f, y: %.6f, z: %.6f \n",
-                    __FUNCTION__,
-                    sensor->freq_magnitude[CORD_X][j],
-                    sensor->freq_magnitude[CORD_Y][j],
-                    sensor->freq_magnitude[CORD_Z][j]
-            );
-    }
-*/
-#endif
 
     return dbinf_InsertData(sensor);
 

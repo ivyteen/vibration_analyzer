@@ -20,6 +20,7 @@ typedef struct packet_header {
 #define SAMPLES     1600    // Should be got from the client
 #define HZ			60
 
+
 typedef struct sensor_t {
     uint16_t sensor_num;
     double time_domain[CORD_MAX][SAMPLES];

@@ -25,17 +25,23 @@
 					 	freq_data json NOT NULL,\
 						spectrum json NOT NULL,\
 						abs_avg json NOT NULL,\
-						vrms json NOT NULL\
-						)"
+						vrms json NOT NULL )"
+						//alarm_criteria json NOT NULL )"
 
 #define INSERT_DATA_STR "INSERT INTO sensor%d\
 						(freq_data, spectrum, abs_avg, vrms)\
 						VALUES('%s','%s','%s','%s')"
 
+
+#define CREATE_ALARM_CRITERIA_STR "CREATE TABLE sensor%d_alarm( alarm_criteria json NOT NULL )"
+
+
 /*
-#define IPC_FREQ_STR "{ \"sensor_num\": %d, \"freq_data\": %s }"
-#define IPC_SPECTRUM_STR "{ \"sensor_num\": %d, \"spectrum\": %s }"
-#define IPC_SENSOR_NUM_STR "{ \"sensor_num\": %d }"
+#define GET_VRMS_STR "SELECT json_extract(vrms, '%s') FROM sensor%d'"
+
+#define GET_VRMS_ALARM_CRITERIA_STR "SELECT alarm_criteria FROM sensor%d"
+#define INSERT_VRMS_ALARM_CRITERIA_STR "INSERT INTO sensor%d\
+										alarm_criteria VALUES '%s'"
 */
 
 #define REDIS_STR		"{ \"timestamp\": %s, \"freq_data\": %s, \"spectrum\": %s }"
@@ -56,10 +62,9 @@ json_object *vrms;
 
 
 #define REDIS_PORT	6379
-#define TOTAL_SENSOR_NUM	2
 
-time_t sensorDataTimeTable[TOTAL_SENSOR_NUM];
-
+//time_t sensorDataTimeTable[TOTAL_SENSOR_NUM];
+DB_SENSOR_INFO_t sensor_data_table[TOTAL_SENSOR_NUM];
 
 static redisContext* cont = NULL;
 static redisReply* rep = NULL;
@@ -281,15 +286,56 @@ static int dbinf_CheckInsertMySQL(int sensor_num, time_t current_time){
 	
 #define RENEW_INTERVAL 1800 //30min
 
-	
+#if 0
 	if(current_time - sensorDataTimeTable[sensor_num] > RENEW_INTERVAL){
 		sensorDataTimeTable[sensor_num] = current_time;
 		return 1;
 	}
-	
+#else
+	if(current_time - sensor_data_table[sensor_num].sql_save_time > RENEW_INTERVAL){
+		sensor_data_table[sensor_num].sql_save_time = current_time;
+		return 1;
+	}
+
+#endif
 
 	return 0;
 }
+
+#if 0
+static int dbinf_GetSensorVrmsAvg(int sensor_num, double vrms_avg[3]){
+
+	int ret = -1, i, j;
+	my_ulonglong row_num;
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	const char* cord[3] = {"$.x", "$.y", "$.z"};
+	char str[128]={0,};
+
+	for(i=0; i<(sizeof(cord)/sizeof(char*)); i++){
+		bzero(str, sizeof(str));
+		sprintf(str,GET_VRMS_STR,cord[i],sensor_num);
+
+		mysql_query(sql_ins,str);
+
+		result = mysql_store_result(sql_ins);
+
+		row_num = mysql_num_rows(result);
+		row = mysql_fetch_row(result);
+
+		for(j=0; j<row_num; j++){
+
+			vrms_avg[i] += atof(row[j]);
+		}
+
+		vrms_avg[i] = vrms_avg[i] / row_num;
+		mysql_free_result(result);
+	}
+
+	
+	return 0;
+}
+#endif
 
 int dbinf_InsertData(SENSOR_t *sensor_data){
 
@@ -305,6 +351,8 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 	time_t current_time;
 	struct tm* local_time;
 	char timestamp_str[26]={0,};
+	double vrms_avg[3] = {0,};
+	char vrms_avg_str[128]={0,};
 
 	time(&current_time);
 
@@ -327,6 +375,31 @@ int dbinf_InsertData(SENSOR_t *sensor_data){
 		if(dbinf_CheckTableExist(sensor_num) == 0)
 			dbinf_CreateTable(sensor_num);
 
+
+		/* Get the basis of alarm */
+#if 0
+		if(sensor_data_table[sensor_num].vrms_save_flag == 0){
+				
+			if(sensor_data_table[sensor_num].sql_save_cnt < 50){
+				sensor_data_table[sensor_num].sql_save_cnt++;
+			}
+			else{
+				/* Get & Save Vrms avg */
+				dbinf_GetSensorVrmsAvg(sensor_num,vrms_avg);
+				sprintf(vrms_avg_str, "{ \"x\": %.6f, \"y\": %.6f, \"z\": %.6f }", vrms_avg[1], vrms_avg[2], vrms_avg[3]);
+				query_len = strlen(INSERT_VRMS_ALARM_CRITERIA_STR) + strlen(vrms_avg);
+				query_str = (char*)malloc(query_len);
+				bzero(query_str, query_len);
+				sprintf(query_str, INSERT_VRMS_ALARM_CRITERIA_STR,sensor_num, vrms_avg_str);
+				if(mysql_query(sql_ins,query_str) == 0){
+					sensor_data_table[sensor_num].vrms_save_flag = 1;
+				}
+				free(query_str);
+				printf("%s - alarm criteria set\n",__FUNCTION__);
+			}
+
+		}
+#endif
 		query_len = strlen(INSERT_DATA_STR)+strlen(time_domain_str)+strlen(freq_magnitude_str)+strlen(abs_avg_str)+strlen(vrms_str);
 		query_str = (char*)malloc(query_len);
 		bzero(query_str, query_len);
@@ -420,3 +493,4 @@ int main(void){
 
 
 #endif
+
