@@ -11,10 +11,11 @@
 
 
 typedef struct db_sensor_info {
-    time_t sql_save_time;
+    unsigned char table_create;
+    time_t last_sql_save_time;
     int sql_save_cnt;
-    int vrms_save_flag;
-    float vrms_avg[CORD_MAX];
+    unsigned char alarm_criteria_set_flag;
+    float alarm_criteria[CORD_MAX];
 } DB_SENSOR_INFO_t;
 
 int dbinf_InsertData(SENSOR_t *sensor_data);
