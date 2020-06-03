@@ -18,7 +18,7 @@ typedef struct packet_header {
 #pragma pack(pop)
 
 
-int sclient_Init(void);
+int sclient_Init(int dev_num);
 int sclient_CleanUp(void);
 int sclient_SendData(VIB_ANALYZER_t* sensor);
 //int sclient_MutexLock(void);

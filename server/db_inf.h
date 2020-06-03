@@ -5,7 +5,7 @@
 #include "data_handler.h"
 
 
-#define TOTAL_INF_CLIENT    1
+#define TOTAL_INF_CLIENT    2
 #define SENSORS_FOR_DEV     2
 #define TOTAL_SENSOR_NUM    (TOTAL_INF_CLIENT*SENSORS_FOR_DEV)
 

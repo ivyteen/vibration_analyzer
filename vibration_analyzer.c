@@ -53,7 +53,7 @@ void* analyzer_SubThread(void* arg){
 	return NULL;
 }
 
-int main(void){
+int main(int argc, char** argv){
 
     int i;
 	int samples;
@@ -61,6 +61,14 @@ int main(void){
 	FFT_t* fft_data;
 	SENSOR_DEV_t* dev;
 
+	int dev_num;
+
+	if(argc != 2){
+		printf("invalid arguments\n");
+		exit(EXIT_FAILURE);
+	}
+
+	dev_num = atoi(argv[1]);
 	
 	analyzer = (VIB_ANALYZER_t*)malloc(sizeof(VIB_ANALYZER_t)*TOTAL_SENSOR_NUM);
 
@@ -75,7 +83,7 @@ int main(void){
 	analyzer[1].dev.sample_rate = 1600;
 	analyzer[1].dev.sample_time = 1;
 
-	sclient_Init();
+	sclient_Init(dev_num);
 
 	vibSensor_PiGpioInit();
 

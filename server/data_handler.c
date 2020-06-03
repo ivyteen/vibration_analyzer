@@ -118,7 +118,7 @@ int dhandler_DataExtractor(uint8_t* packet_buf){
 
     memcpy(&sensor_num,(packet_buf+1),sizeof(uint16_t));
     sensor->sensor_num = ntohs(sensor_num);
-  
+    //printf("sensor_num : %d\n",sensor->sensor_num);
     data_ptr = data_start;
     //Convert string to double for time domain
     for(i=CORD_X; i<CORD_MAX; i++){

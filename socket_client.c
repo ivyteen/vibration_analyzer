@@ -14,17 +14,20 @@
 #include "socket_client.h"
 
 #define UDP_PORT 5100
-#define NET_ADDR "192.168.1.15"
+#define NET_ADDR "192.168.0.15"
 //#define NET_ADDR "192.168.1.12"
 #define STR_BUF_LEN 10
 
+uint16_t device_number;
 
 static int sockfd = 0;
 static struct sockaddr_in servaddr;
 
 pthread_mutex_t mid;
 
-int sclient_Init(void){
+int sclient_Init(int dev_num){
+
+    device_number = dev_num;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if(sockfd < 0){
@@ -100,6 +103,8 @@ int sclient_SendData(VIB_ANALYZER_t* sensor){
     uint8_t *packet_ptr = NULL;
     size_t packet_size;
     
+    volatile uint16_t sensor_num;
+
     CORD_t i;
     int j;
 
@@ -129,20 +134,32 @@ int sclient_SendData(VIB_ANALYZER_t* sensor){
     }
 
     comp_data = (Bytef*)malloc(data_size+(data_size/10));
+    //printf("comp_dat ptr : %p \n",comp_data);
     ret = compress(comp_data,&comp_size,data_start,data_size);
     if(ret != Z_OK){
         printf("compress error : %d\n",ret);
+        free(comp_data);
+        free(data_start);
         return -1;
     }
-    else{
-        printf("src len : %d, dest len : %d\n",data_size, comp_size);
 
-    }
+    
 
     ph.start = 0xAA;
     ph.end = 0xCC;
     ph.data_size = htons(comp_size);
-    ph.sensor_id = htons(sensor->dev.handler);
+//    ph.sensor_id = htons(sensor->dev.handler);
+
+    if(sensor->dev.handler == 0){
+        sensor_num = 2*(device_number-1);
+    } else {
+        sensor_num = 2*device_number-1;
+    }
+
+    ph.sensor_id = htons(sensor_num);
+    //printf("%d %d\n",sensor_num, ph.sensor_id);
+
+    printf("src len : %d, dest len : %d\n",data_size, comp_size);
 
 
     header_size = sizeof(PACKET_HEADER_t);
