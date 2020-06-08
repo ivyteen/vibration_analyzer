@@ -1,0 +1,10 @@
+[Unit] 
+Description=Vibration Analyzer Client
+After=multi-user.target
+
+[Service]
+Type=idle
+ExecStart=/usr/bin/sudo /home/pi/vib_anal 1
+
+[Install]
+WantedBy=multi-user.target
