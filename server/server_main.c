@@ -72,6 +72,7 @@ int server_RecvData(void){
             continue;
         }
 
+        printf("[%s] dev ip %s\n",__FUNCTION__,inet_ntoa(cliaddr.sin_addr));
         dhandler_DataExtractor(packet_buf);
     }
 
